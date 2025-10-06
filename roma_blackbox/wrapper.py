@@ -50,7 +50,7 @@ class BlackBoxWrapper:
         if use_enhanced_pii:
             self.pii_redactor = EnhancedPIIRedactor()
         else:
-            self.pii_redactor = PIIRedactor(policy.pii_fields)
+            self.pii_redactor = PIIRedactor(policy)
 
         self.trace_filter = TraceFilter(policy)
         self.metrics = metrics or InMemoryMetrics()
