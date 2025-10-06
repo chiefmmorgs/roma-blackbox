@@ -1,89 +1,82 @@
-"""BlackBoxWrapper - Main wrapper for ROMA agents"""
+"""Black-box wrapper for agent monitoring"""
 
-import time
 import hashlib
-import json
-import logging
-from typing import Any, Dict, Optional, Union
+import time
+from typing import Any, Dict, Optional
 from datetime import datetime, UTC
+from dataclasses import dataclass
 
 from .policy import Policy
-from .filters import TraceFilter, PIIRedactor
-from .storage import get_storage, AbstractStorage
-from .metrics import AbstractMetrics, get_metrics
+from .filters import PIIRedactor, TraceFilter
+from .pii_patterns import EnhancedPIIRedactor
+from .storage import MemoryStorage, PostgreSQLStorage
+from .metrics import InMemoryMetrics
 from .attestation import AttestationGenerator
+
+import logging
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class BlackBoxResult:
-    """Result from a black-box wrapped agent execution"""
-
-    def __init__(
-        self,
-        request_id: str,
-        status: str,
-        result: Any,
-        traces: Optional[Dict] = None,
-        latency_ms: int = 0,
-        cost_cents: float = 0.0,
-        input_hash: Optional[str] = None,
-        output_hash: Optional[str] = None,
-        attestation: Optional[Dict] = None,
-    ):
-        self.request_id = request_id
-        self.status = status
-        self.result = result
-        self.traces = traces
-        self.latency_ms = latency_ms
-        self.cost_cents = cost_cents
-        self.input_hash = input_hash
-        self.output_hash = output_hash
-        self.attestation = attestation
-
-    def to_dict(self) -> Dict:
-        return {
-            "request_id": self.request_id,
-            "status": self.status,
-            "result": self.result,
-            "traces": self.traces,
-            "latency_ms": self.latency_ms,
-            "cost_cents": self.cost_cents,
-            "input_hash": self.input_hash,
-            "output_hash": self.output_hash,
-            "attestation": self.attestation,
-        }
+    request_id: str
+    status: str
+    result: Any
+    traces: Optional[list]
+    latency_ms: int
+    cost_cents: float
+    input_hash: Optional[str]
+    output_hash: Optional[str]
+    attestation: Optional[Dict]
 
 
 class BlackBoxWrapper:
-    """Wraps any ROMA agent to add black-box monitoring"""
+    """Wraps an agent with privacy-preserving black-box monitoring"""
 
     def __init__(
         self,
         agent: Any,
         policy: Policy,
-        storage: Union[str, AbstractStorage] = "memory",
-        metrics: Optional[AbstractMetrics] = None,
-        code_sha: Optional[str] = None,
+        storage: str = "memory",
+        metrics: Optional[Any] = None,
+        use_enhanced_pii: bool = True,
     ):
         self.agent = agent
         self.policy = policy
-        self.storage = get_storage(storage) if isinstance(storage, str) else storage
-        self.metrics = metrics or get_metrics("noop")
-        self.code_sha = code_sha or "unknown"
+        self.use_enhanced_pii = use_enhanced_pii
+
+        # Choose PII redactor based on flag
+        if use_enhanced_pii:
+            self.pii_redactor = EnhancedPIIRedactor()
+        else:
+            self.pii_redactor = PIIRedactor(policy.pii_fields)
 
         self.trace_filter = TraceFilter(policy)
-        self.pii_redactor = PIIRedactor(policy)
-        self.attestation_gen = AttestationGenerator(policy, self.code_sha)
+        self.metrics = metrics or InMemoryMetrics()
 
-        logger.info(f"BlackBoxWrapper initialized (black_box={policy.black_box})")
+        # Handle storage as string or object
+        if isinstance(storage, str):
+            if storage == "memory":
+                self.storage = MemoryStorage()
+            elif storage == "postgres":
+                self.storage = PostgreSQLStorage()
+            else:
+                raise ValueError(f"Unknown storage backend: {storage}")
+        else:
+            # Storage is already an object
+            self.storage = storage
+
+        self.attestation_gen = AttestationGenerator(
+            policy=policy,
+            code_sha="fake_sha_for_demo",
+        )
 
     async def run(
         self, request_id: str, task: str, payload: Optional[Dict[str, Any]] = None, **kwargs
     ) -> BlackBoxResult:
         start_time = time.time()
         payload = payload or {}
-
         is_break_glass = request_id in self.policy.break_glass_request_ids
 
         if is_break_glass:
@@ -109,33 +102,40 @@ class BlackBoxWrapper:
                 self.metrics.record_trace_strip()
 
             output_hash = self._compute_hash(result) if self.policy.keep_hashes else None
+
             latency_ms = int((time.time() - start_time) * 1000)
-            attestation = self.attestation_gen.generate(request_id, input_hash, output_hash)
+
+            # Redact PII from result if enabled
+            if self.use_enhanced_pii:
+                result = self.pii_redactor.redact(result)
 
             await self.storage.store_outcome(
                 {
                     "request_id": request_id,
+                    "status": "success",
                     "input_hash": input_hash,
                     "output_hash": output_hash,
-                    "status": "success",
                     "latency_ms": latency_ms,
                     "cost_cents": cost_cents,
                     "created_at": datetime.now(UTC).isoformat(),
-                    "attestation": attestation,
                 }
             )
 
             self.metrics.record_request("success", latency_ms, cost_cents)
 
-            if is_break_glass:
-                await self.storage.log_audit_event(
-                    {
-                        "request_id": request_id,
-                        "action": "break_glass_enabled",
+            attestation = None
+            if self.policy.include_code_sha or self.policy.include_policy_hash:
+                attestation = self.attestation_gen.generate(
+                    request_id=request_id,
+                    input_hash=input_hash,
+                    output_hash=output_hash,
+                )
+                if is_break_glass:
+                    attestation["break_glass"] = {
+                        "enabled": True,
                         "reason": "Request ID in break_glass_request_ids",
                         "timestamp": datetime.now(UTC).isoformat(),
                     }
-                )
 
             return BlackBoxResult(
                 request_id,
@@ -152,18 +152,15 @@ class BlackBoxWrapper:
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
             logger.error(f"Agent execution failed: {e}")
-
             await self.storage.store_outcome(
                 {
                     "request_id": request_id,
                     "status": "error",
+                    "error": str(e),
                     "latency_ms": latency_ms,
-                    "cost_cents": 0,
                     "created_at": datetime.now(UTC).isoformat(),
-                    "attestation": {"error": str(e)},
                 }
             )
-
             self.metrics.record_request("error", latency_ms, 0)
 
             return BlackBoxResult(
@@ -182,22 +179,14 @@ class BlackBoxWrapper:
         if isinstance(agent_result, dict):
             result = agent_result.get("result", agent_result)
             traces = agent_result.get("traces")
-            cost = agent_result.get("cost", 0)
-            if isinstance(cost, dict):
-                cost = cost.get("total_cents", 0)
-            return result, traces, float(cost)
-        else:
-            return agent_result, None, 0.0
+            cost = agent_result.get("cost_cents", 0.0)
+            return result, traces, cost
+        return agent_result, None, 0.0
 
     def _compute_hash(self, data: Any) -> str:
-        json_str = json.dumps(data, sort_keys=True)
-        return hashlib.sha256(json_str.encode()).hexdigest()
+        serialized = str(data).encode()
+        return hashlib.sha256(serialized).hexdigest()
 
-    async def get_outcome(self, request_id: str) -> Optional[Dict]:
+    async def get_outcome(self, request_id: str):
+        """Retrieve stored outcome by request_id"""
         return await self.storage.get_outcome(request_id)
-
-    async def get_audit_log(self, request_id: str) -> list:
-        return await self.storage.get_audit_log(request_id)
-
-    def get_metrics_summary(self) -> Dict:
-        return self.metrics.get_summary()

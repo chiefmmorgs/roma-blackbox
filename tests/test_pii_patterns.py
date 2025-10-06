@@ -69,10 +69,10 @@ class TestEnhancedPIIRedactor:
     def test_api_key_redaction(self):
         redactor = EnhancedPIIRedactor()
 
-        text = 'api_key: "YOUR_API_KEY_HERE"'
+        text = 'api_key: "sk_test_FAKE1234567890abcdefghijk"'
         result = redactor.redact(text)
         assert "[API_KEY]" in result
-        assert "YOUR_API_KEY_HERE" not in result
+        assert "sk_test_FAKE1234567890abcdefghijk" not in result
 
     def test_aws_key_redaction(self):
         redactor = EnhancedPIIRedactor()
