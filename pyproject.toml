@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roma-blackbox"
+version = "0.3.0"
+description = "Privacy-first monitoring wrapper for ROMA agents"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["pydantic>=2.0.0"]
+
+[project.optional-dependencies]
+postgresql = [
+    "asyncpg>=0.29.0",
+]
+prometheus = [
+    "prometheus-client>=0.19.0",
+]
+langchain = [
+    "langchain>=0.1.0",
+    "langchain-core>=0.1.0",
+]
+all = [
+    "asyncpg>=0.29.0",
+    "prometheus-client>=0.19.0",
+    "cryptography>=41.0.0",
+    "langchain>=0.1.0",
+    "langchain-core>=0.1.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

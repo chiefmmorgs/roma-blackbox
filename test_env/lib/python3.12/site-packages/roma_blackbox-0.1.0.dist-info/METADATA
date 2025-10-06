@@ -1,0 +1,29 @@
+Metadata-Version: 2.4
+Name: roma-blackbox
+Version: 0.1.0
+Summary: Privacy-first monitoring wrapper for ROMA agents
+Home-page: https://github.com/your-org/roma-blackbox
+Author: Your Name
+Author-email: your.email@example.com
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pydantic>=2.0.0
+Dynamic: author
+Dynamic: author-email
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: requires-python
+
+# 🔒 roma-blackbox
+
+**Privacy-first monitoring for ROMA agents**
+
+Add black-box monitoring to any ROMA agent in 2 lines of code.
+
+## Installation
+```bash
+pip install roma-blackbox
+exit
+exit
+q
