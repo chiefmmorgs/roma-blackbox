@@ -7,7 +7,7 @@ roma-blackbox wraps your agents to:
 - Store only outcomes with cryptographic attestations
 - Preserve results while protecting process
 
-## Installation
+## Installation 
 ```bash
 pip install roma-blackbox
 ```
@@ -17,8 +17,42 @@ pip install roma-blackbox[langchain]  # LangChain integration
 pip install roma-blackbox[all]        # Everything
 ```
 Quick Start
+cd ~/roma-blackbox/demo
+
+# roma-blackbox Interactive Demo
+
+Three interactive use-case demonstrations showing what roma-blackbox does.
+
+## Demos Included
+
+1. **PII Scrubber**: Redact emails, SSNs, credit cards, etc. from text
+2. **Agent Wrapper**: Hide AI agent execution traces while preserving results
+3. **API Middleware**: Clean API requests/responses before logging
+
+## Option 1: Test with Published Package (User Experience)
+
+This tests the demo using the published PyPI package, exactly as end users would experience it.
+```bash
+# Create clean test environment
+mkdir roma-demo-test
+cd roma-demo-test
+```
+# Download demo files
+```
+curl -O https://raw.githubusercontent.com/chiefmmorgs/roma-blackbox/master/demo/showcase.py
+curl -O https://raw.githubusercontent.com/chiefmmorgs/roma-blackbox/master/demo/requirements.txt
+```
+# Setup and run
+```
+python3 -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run showcase.py
+Open http://localhost:8501 in your browser.
+```
 
 Basic Usage
+
 ```python
 from roma_blackbox import BlackBoxWrapper, Policy
 
@@ -284,3 +318,220 @@ A: Yes: use_enhanced_pii=False in BlackBoxWrapper.
 Contributing
 
 Issues and PRs welcome at https://github.com/chiefmmorgs/roma-blackbox
+
+
+
+## 🚀 VPS/Server Installation Guide
+
+### Common Issues and Solutions
+
+#### Issue 1: `pip` command not found
+
+**Problem:**
+```bash
+root@server:~# pip install roma-blackbox
+Command 'pip' not found
+```
+Solution:
+```bashapt update
+apt install python3-pip python3-venv -y
+```
+Then use pip3 instead of pip.
+
+Issue 2: externally-managed-environment error
+Problem:
+bashroot@server:~# pip3 install roma-blackbox
+error: externally-managed-environment
+× This environment is externally managed
+Solution: Use a virtual environment (best practice for servers):
+```bash# Create project directory
+mkdir ~/roma-blackbox-app
+cd ~/roma-blackbox-app
+
+# Create virtual environment
+python3 -m venv venv
+
+# Activate it
+source venv/bin/activate
+
+# Install
+pip install roma-blackbox
+```
+# Verify
+python -c "from roma_blackbox import BlackBoxWrapper; print('✓ Works!')"
+Each time you SSH in, activate the venv:
+```bash
+cd ~/roma-blackbox-app
+source venv/bin/activate
+```
+Issue 3: python3-venv not available
+
+Problem:
+
+```bash
+python3 -m venv venv
+```
+The virtual environment was not created successfully because ensurepip is not available.
+
+Solution:
+```bash
+# Install python3-venv package
+apt install python3.12-venv -y
+
+# Or for other Python versions:
+apt install python3-venv -y
+
+# Now create venv
+python3 -m venv venv
+source venv/bin/activate
+```
+Issue 4: Streamlit demo not accessible from browser
+
+Problem:
+
+This site can't be reached
+
+http://0.0.0.0:8501/ - ERR_ADDRESS_INVALID
+
+Solution:
+
+Find your server's public IP:
+
+```bash
+curl ifconfig.me
+# Example output: 77.90.19.203
+```
+Open firewall port:
+
+```bash
+# UFW (Ubuntu/Debian)
+ufw allow 8501/tcp
+
+# Or iptables
+iptables -A INPUT -p tcp --dport 8501 -j ACCEPT
+```
+Run streamlit with correct binding:
+
+```bash
+cd ~/roma-blackbox-app
+source venv/bin/activate
+pip install streamlit
+
+# Download demo
+curl -O https://raw.githubusercontent.com/chiefmmorgs/roma-blackbox/master/demo/showcase.py
+
+# Run (bind to all interfaces)
+streamlit run showcase.py --server.address 0.0.0.0 --server.port 8501
+```
+Access from browser using your PUBLIC IP:
+
+http://77.90.19.203:8501
+
+(Replace with your actual IP from step 1)
+
+Don't use 0.0.0.0 in the browser - that's the server bind address. Use your real IP.
+
+Complete VPS Setup (Ubuntu/Debian)
+```bash
+# 1. Install dependencies
+apt update
+apt install python3-pip python3-venv -y
+
+# 2. Create project
+mkdir ~/roma-blackbox-app
+cd ~/roma-blackbox-app
+
+# 3. Setup virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# 4. Install roma-blackbox
+pip install roma-blackbox
+
+# 5. Test installation
+python -c "from roma_blackbox import BlackBoxWrapper, Policy; print('✓ Installed')"
+
+# 6. (Optional) Run demo
+pip install streamlit
+curl -O https://raw.githubusercontent.com/chiefmmorgs/roma-blackbox/master/demo/showcase.py
+ufw allow 8501/tcp
+streamlit run showcase.py --server.address 0.0.0.0 --server.port 8501
+
+# Access at: http://YOUR_SERVER_IP:8501
+
+Production Deployment Tips
+1. Run as systemd service:
+bash# Create service file
+cat > /etc/systemd/system/roma-demo.service << 'SYSTEMD'
+[Unit]
+Description=roma-blackbox Demo
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/roma-blackbox-app
+Environment="PATH=/root/roma-blackbox-app/venv/bin"
+ExecStart=/root/roma-blackbox-app/venv/bin/streamlit run showcase.py --server.address 0.0.0.0 --server.port 8501
+Restart=always
+```
+[Install]
+
+WantedBy=multi-user.target
+
+SYSTEMD
+```
+
+# Enable and start
+systemctl daemon-reload
+systemctl enable roma-demo
+systemctl start roma-demo
+
+# Check status
+systemctl status roma-demo
+2. Use nginx reverse proxy (optional):
+bashapt install nginx -y
+
+cat > /etc/nginx/sites-available/roma-demo << 'NGINX'
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:8501;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+NGINX
+
+ln -s /etc/nginx/sites-available/roma-demo /etc/nginx/sites-enabled/
+nginx -t
+systemctl restart nginx
+Now access at http://your-domain.com instead of http://IP:8501
+3. Environment variables for production:
+bash# Create .env file
+cat > ~/roma-blackbox-app/.env << 'ENV'
+POSTGRES_URL=postgresql://user:pass@localhost/dbname
+OPENWEATHER_API_KEY=your_key_here
+ENV
+
+# Load in your app
+pip install python-dotenv
+pythonfrom dotenv import load_dotenv
+load_dotenv()
+```
+Security Notes
+
+⚠️ Never run production apps as root (create dedicated user)
+
+⚠️ Use environment variables for secrets, not hardcoded values
+
+⚠️ Enable HTTPS with Let's Encrypt for public demos
+
+⚠️ Restrict firewall to only necessary ports
+
+⚠️ Keep packages updated: pip install --upgrade roma-blackbox
