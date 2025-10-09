@@ -17,6 +17,8 @@ pip install roma-blackbox[langchain]  # LangChain integration
 pip install roma-blackbox[all]        # Everything
 ```
 Quick Start
+<img width="1916" height="987" alt="image" src="https://github.com/user-attachments/assets/f3f8e20a-c5c6-4e04-bbf0-62618922f6fb" />
+
 cd ~/roma-blackbox/demo
 
 # roma-blackbox Interactive Demo
